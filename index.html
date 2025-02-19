@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MØRK LABS – Easy Bulk Media Cropper Resizer and Labeler</title>
+  <!-- JSZip for generating zip archives -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js"></script>
+  <!-- libgif.js for animated GIF handling -->
+  <script src="https://cdn.jsdelivr.net/gh/buzzfeed/libgif-js/libgif.js"></script>
+  <style>
+    /* Light/Dark CSS Variables */
+    :root {
+      --bg-color: #f0f2f5;
+      --text-color: #000;
+      --header-bg: #007BFF;
+      --header-text: #fff;
+      --control-bg: #fff;
+      --control-border: #ccc;
+      --button-bg: #007BFF;
+      --button-text: #fff;
+      --dropzone-border: #007BFF;
+    }
+    .dark-mode {
+      --bg-color: #181818;
+      --text-color: #e0e0e0;
+      --header-bg: #333;
+      --header-text: #e0e0e0;
+      --control-bg: #282828;
+      --control-border: #555;
+      --button-bg: #555;
+      --button-text: #e0e0e0;
+      --dropzone-border: #e0e0e0;
+    }
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      margin: 0; padding: 0;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+    header {
+      background-color: var(--header-bg);
+      color: var(--header-text);
+      padding: 20px; text-align: center; line-height: 1.5;
+      position: relative;
+    }
+    header h1 {
+      margin: 0 0 10px;
+      font-size: 2em;
+    }
+    header .instructions {
+      font-size: 0.95em; max-width: 800px; margin: 0 auto;
+    }
+    /* The question mark help button */
+    #help-btn {
+      position: absolute; top: 20px; right: 20px;
+      background: #ffce00; color: #000;
+      border: none; border-radius: 50%;
+      width: 30px; height: 30px; cursor: pointer;
+      font-weight: bold; font-size: 1.1em;
+    }
+    #main-container {
+      max-width: 1200px; margin: 20px auto; padding: 20px;
+      background: var(--control-bg);
+      border: 1px solid var(--control-border);
+      border-radius: 8px;
+    }
+    #controls {
+      display: flex; flex-wrap: wrap; justify-content: space-around; align-items: center;
+      margin-bottom: 20px; gap: 10px;
+    }
+    #controls input[type="file"] {
+      display: none;
+    }
+    .custom-file-label {
+      padding: 10px 20px; background-color: var(--button-bg);
+      color: var(--button-text); border-radius: 4px; cursor: pointer;
+    }
+    #default-crop {
+      padding: 5px; border: 1px solid var(--control-border);
+      border-radius: 4px; width: 100px;
+    }
+    #controls label {
+      font-size: 0.9em; margin-right: 5px;
+    }
+    #images-per-row {
+      vertical-align: middle;
+    }
+    #images-per-row-label {
+      font-weight: bold;
+      margin-left: 5px;
+    }
+    #color-scheme label {
+      font-size: 0.9em; margin-right: 5px;
+    }
+    #download-all {
+      padding: 10px 20px;
+      background-color: var(--button-bg);
+      color: var(--button-text);
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #drop-zone {
+      border: 2px dashed var(--dropzone-border);
+      padding: 20px;
+      text-align: center;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      font-size: 1.2em;
+      transition: background-color 0.3s ease;
+    }
+    /* The container that holds the image editors */
+    #image-container {
+      display: grid;
+      grid-gap: 10px;
+      /* We'll set gridTemplateColumns in JS to "repeat(imagesPerRow, 1fr)" */
+      align-items: stretch; /* Ensures each row's items match the tallest item in that row */
+    }
+    .image-editor {
+      position: relative;
+      border: 2px solid transparent;
+      background: var(--control-bg);
+      border-radius: 4px;
+      padding: 5px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%; /* fill the grid cell horizontally */
+    }
+    .image-editor.selected {
+      border-color: var(--button-bg);
+    }
+    .image-editor canvas {
+      display: block; background: #eee;
+      border-radius: 4px; margin-bottom: 10px;
+      width: 100%; /* let it fill horizontally; height is auto in CSS */
+      height: auto;
+    }
+    .remove-button {
+      position: absolute; top: -8px; right: -8px;
+      background: #dc3545; color: #fff; border: none; border-radius: 50%;
+      width: 24px; height: 24px; font-size: 16px; line-height: 20px;
+      cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    .aspect-ratio-label {
+      position: absolute; top: 4px; left: 4px;
+      background: rgba(0,0,0,0.7); color: #fff;
+      padding: 2px 6px; font-size: 0.8em; border-radius: 4px;
+    }
+    /* The container around the text area + mic icon */
+    .caption-container {
+      position: relative; width: 100%; margin-top: 10px;
+    }
+    .caption-input {
+      width: 100%; padding: 5px; font-size: 0.9em;
+      border: 1px solid var(--control-border); border-radius: 4px;
+      box-sizing: border-box; resize: vertical;
+    }
+    .mic-btn {
+      position: absolute; right: 8px; top: 8px;
+      background: transparent; border: none; cursor: pointer;
+      font-size: 1.2em; line-height: 1; color: #666;
+    }
+    /* The help modal overlay */
+    #help-modal {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6); display: none;
+      justify-content: center; align-items: center;
+      z-index: 9999;
+    }
+    #help-content {
+      background: #fff; color: #000; padding: 20px; border-radius: 6px;
+      max-width: 600px; width: 90%; font-size: 1em; line-height: 1.5;
+    }
+    #help-close {
+      margin-top: 20px; padding: 5px 10px; background: #007BFF;
+      color: #fff; border: none; border-radius: 4px; cursor: pointer;
+    }
+  </style>
+</head>
+<body class="dark-mode">
+  <header>
+    <h1>MØRK LABS</h1>
+    <div class="instructions">
+      <p><strong>Bulk Media Resizing Made Easy</strong></p>
+      <p>
+        <em>Shortcuts:</em> Press <strong>?</strong> or click the question mark button for details.
+      </p>
+    </div>
+    <button id="help-btn">?</button>
+  </header>
+
+  <!-- Help modal for keyboard shortcuts -->
+  <div id="help-modal">
+    <div id="help-content">
+      <h2>Keyboard Shortcuts</h2>
+      <ul>
+        <li><strong>Shift+A</strong> – Select All/None</li>
+        <li><strong>P/N</strong> – Previous/Next Image</li>
+        <li><strong>I / +</strong> – Zoom In</li>
+        <li><strong>O / –</strong> – Zoom Out</li>
+        <li><strong>C</strong> – Rotate Clockwise</li>
+        <li><strong>X</strong> – Rotate Counterclockwise</li>
+        <li><strong>Arrow Keys</strong> – Move Crop Area</li>
+        <li><strong>1–9</strong> – Change Crop Aspect Ratio</li>
+        <li><strong>H</strong> – Center Crop on Image</li>
+        <li><strong>F</strong> – Fit Crop to Entire Image</li>
+        <li><strong>A/S</strong> – Move Frame Slider (Video/GIF)</li>
+      </ul>
+      <button id="help-close">Close</button>
+    </div>
+  </div>
+
+  <div id="main-container">
+    <div id="controls">
+      <label class="custom-file-label" for="file-input">Select Media</label>
+      <input type="file" id="file-input" multiple accept=".heic,.tif,.tiff,image/*,video/*,.avi,.mov,.mpeg,.mp4,.gif,.txt">
+
+      <div>
+        Default Crop Ratio: <input type="text" id="default-crop" placeholder="1024x1024" value="1024x1024">
+      </div>
+
+      <div>
+        Output Format:
+        <label><input type="radio" name="output-format" value="jpg"> JPG</label>
+        <label><input type="radio" name="output-format" value="png" checked> PNG</label>
+      </div>
+
+      <div>
+        <label><input type="checkbox" id="download-zip"> Download as ZIP</label>
+      </div>
+
+      <div>
+        Images per row:
+        <input type="range" id="images-per-row" min="1" max="6" value="4">
+        <span id="images-per-row-label">4</span>
+      </div>
+
+      <div id="color-scheme">
+        Color Scheme:
+        <label><input type="radio" name="color-scheme" value="light"> Light</label>
+        <label><input type="radio" name="color-scheme" value="dark" checked> Dark</label>
+      </div>
+
+      <button id="download-all">Download Cropped Media</button>
+    </div>
+
+    <div id="drop-zone">Drag &amp; Drop media files here</div>
+    <div id="image-container"></div>
+  </div>
+
+  <script>
+    let captionCache = {};
+    const aspectRatios = {
+      1: { label: "1:1", width: 1024, height: 1024, ratio: 1 },
+      2: { label: "1:2 Vertical", width: 720, height: 1440, ratio: 1/2 },
+      3: { label: "1:2 Horizontal", width: 1440, height: 720, ratio: 2 },
+      4: { label: "2:3 Vertical", width: 832, height: 1248, ratio: 2/3 },
+      5: { label: "2:3 Horizontal", width: 1248, height: 832, ratio: 3/2 },
+      6: { label: "3:4 Vertical", width: 864, height: 1152, ratio: 3/4 },
+      7: { label: "3:4 Horizontal", width: 1152, height: 864, ratio: 4/3 },
+      8: { label: "9:16 Vertical", width: 768, height: 1360, ratio: 9/16 },
+      9: { label: "16:9 Horizontal", width: 1360, height: 768, ratio: 16/9 }
+    };
+
+    let imageEditors = [];
+    let selectedIndices = new Set();
+    let currentSelectionIndex = -1;
+    let imagesPerRow = 4;
+
+    // Update grid columns
+    function updateGridColumns() {
+      const container = document.getElementById('image-container');
+      container.style.gridTemplateColumns = `repeat(${imagesPerRow}, 1fr)`;
+    }
+
+    // After changing imagesPerRow or loading new items
+    function updateAllThumbnails() {
+      updateGridColumns();
+      imageEditors.forEach(ed => ed.resizeCanvasToContainer());
+    }
+
+    class ImageEditor {
+      constructor(file, defaultCropSize) {
+        this.file = file;
+        this.filename = file.name;
+        this.baseName = file.name.replace(/\.[^/.]+$/, "");
+        this.rotation = 0;
+        this.zoom = 1;
+        this.offsetX = 0;
+        this.offsetY = 0;
+        // We'll keep track of the canvas size for scaling offsets
+        this.lastCanvasWidth = 250;
+        this.lastCanvasHeight = 250;
+
+        // parse default crop
+        if (defaultCropSize) {
+          let parts = defaultCropSize.split('x');
+          if (parts.length===2) {
+            let w=parseInt(parts[0]), h=parseInt(parts[1]);
+            this.aspect = w/h;
+            this.exportWidth = w;
+            this.exportHeight = h;
+          } else {
+            this.aspect=1; this.exportWidth=1024; this.exportHeight=1024;
+          }
+        } else {
+          this.aspect=1; this.exportWidth=1024; this.exportHeight=1024;
+        }
+
+        // Build container
+        this.container = document.createElement('div');
+        this.container.classList.add('image-editor');
+
+        this.canvas = document.createElement('canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.container.insertBefore(this.canvas, this.container.firstChild);
+
+        this.removeBtn = document.createElement('button');
+        this.removeBtn.classList.add('remove-button');
+        this.removeBtn.textContent = '×';
+        this.container.appendChild(this.removeBtn);
+
+        this.aspectLabel = document.createElement('div');
+        this.aspectLabel.classList.add('aspect-ratio-label');
+        this.aspectLabel.textContent = this.getAspectLabel();
+        this.container.appendChild(this.aspectLabel);
+
+        // caption container + mic
+        this.captionContainer = document.createElement('div');
+        this.captionContainer.classList.add('caption-container');
+        this.container.appendChild(this.captionContainer);
+
+        this.captionInput = document.createElement('textarea');
+        this.captionInput.rows = 6;
+        this.captionInput.placeholder = "Caption (optional)";
+        this.captionInput.classList.add('caption-input');
+        this.captionContainer.appendChild(this.captionInput);
+
+        this.micBtn = document.createElement('button');
+        this.micBtn.classList.add('mic-btn');
+        this.micBtn.innerHTML = "🎤";
+        this.captionContainer.appendChild(this.micBtn);
+
+        if (captionCache[this.baseName]) {
+          this.captionInput.value=captionCache[this.baseName];
+        }
+
+        // Type detection
+        if (file.name.toLowerCase().endsWith('.gif')) {
+          this.loadGif();
+        } else if (file.type.startsWith('video/')) {
+          this.loadVideo();
+        } else {
+          this.loadImage();
+        }
+
+        // dragging
+        this.isDragging=false;
+        this.dragStartX=0; this.dragStartY=0;
+        this.container.addEventListener('mousedown',(e)=>{
+          this.isDragging=true;
+          this.dragStartX=e.offsetX;
+          this.dragStartY=e.offsetY;
+        });
+        window.addEventListener('mousemove',(e)=>{
+          if (this.isDragging && selectedIndices.has(imageEditors.indexOf(this))) {
+            let rect=this.canvas.getBoundingClientRect();
+            let deltaX=e.clientX-rect.left-this.dragStartX;
+            let deltaY=e.clientY-rect.top-this.dragStartY;
+            this.offsetX+=deltaX; this.offsetY+=deltaY;
+            this.dragStartX=e.clientX-rect.left;
+            this.dragStartY=e.clientY-rect.top;
+            this.clampCropArea();
+            this.draw();
+          }
+        });
+        window.addEventListener('mouseup',()=>{this.isDragging=false;});
+
+        this.removeBtn.addEventListener('click',(e)=>{
+          e.stopPropagation();
+          removeImageEditor(imageEditors.indexOf(this));
+        });
+        this.container.addEventListener('click',()=>{
+          selectOnly(imageEditors.indexOf(this));
+        });
+
+        // mic
+        this.micBtn.addEventListener('click', ()=>{
+          if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            alert("Speech recognition not supported in this browser.");
+            return;
+          }
+          let SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          let recognition = new SpeechRecognition();
+          recognition.interimResults = false;
+          recognition.lang = "en-US";
+          recognition.start();
+          recognition.onresult=(evt)=>{
+            let transcript=evt.results[0][0].transcript;
+            this.captionInput.value+=(this.captionInput.value?" ":"")+transcript;
+          };
+        });
+
+        // initial canvas dimension
+        this.canvas.width=250;
+        this.canvas.height=250;
+      }
+
+      // Called after the container’s grid cell is resized
+      resizeCanvasToContainer(forceAspect=null) {
+        let newWidth = this.container.getBoundingClientRect().width;
+        // scale offset proportionally
+        let scaleX = newWidth / this.canvas.width;
+        let newHeight;
+        if (forceAspect!==null) {
+          newHeight = newWidth / forceAspect;
+        } else {
+          // keep same ratio as old canvas
+          let oldAspect = this.canvas.height / this.canvas.width;
+          newHeight = newWidth * oldAspect;
+        }
+        let scaleY = newHeight / this.canvas.height;
+        this.offsetX *= scaleX;
+        this.offsetY *= scaleY;
+
+        this.canvas.width = newWidth;
+        this.canvas.height = newHeight;
+        this.clampCropArea();
+        this.draw();
+      }
+
+      loadImage(){
+        this.image=new Image();
+        this.image.src=URL.createObjectURL(this.file);
+        this.image.onload=()=>{
+          let aspect=this.image.width/this.image.height;
+          this.resizeCanvasToContainer(aspect);
+          this.offsetX=this.canvas.width/2;
+          this.offsetY=this.canvas.height/2;
+          this.draw();
+        };
+      }
+      loadVideo(){
+        this.video=document.createElement('video');
+        this.video.src=URL.createObjectURL(this.file);
+        this.video.muted=true; this.video.playsInline=true;
+        this.video.style.display='none';
+        document.body.appendChild(this.video);
+
+        this.slider=document.createElement('input');
+        this.slider.type='range'; this.slider.min=0; this.slider.value=0;
+        this.slider.step=0.1;
+        this.slider.style.width='90%';
+        this.slider.style.margin='5px auto';
+        this.container.insertBefore(this.slider,this.captionContainer);
+
+        this.video.addEventListener('loadedmetadata',()=>{
+          let aspect=this.video.videoWidth/this.video.videoHeight;
+          this.resizeCanvasToContainer(aspect);
+          this.offsetX=this.canvas.width/2;
+          this.offsetY=this.canvas.height/2;
+          this.slider.max=this.video.duration;
+          this.draw();
+        });
+        this.slider.addEventListener('input',()=>{
+          if (this.video) this.video.currentTime=parseFloat(this.slider.value);
+          this.draw();
+        });
+        this.video.addEventListener('seeked',()=>this.draw());
+      }
+      loadGif(){
+        this.imgElement=document.createElement('img');
+        this.imgElement.src=URL.createObjectURL(this.file);
+        this.imgElement.style.display='none';
+        this.container.appendChild(this.imgElement);
+
+        this.gifPlayer=new SuperGif({
+          gif:this.imgElement,
+          auto_play:false,
+          draw_while_loading:false,
+          max_width:99999
+        });
+        this.gifPlayer.load(()=>{
+          this.gifPlayer.pause();
+          this.gifPlayer.move_to(0);
+          let sc=this.gifPlayer.get_canvas();
+          if (sc){
+            let aspect=sc.width/sc.height||1;
+            this.resizeCanvasToContainer(aspect);
+            this.offsetX=this.canvas.width/2;
+            this.offsetY=this.canvas.height/2;
+          }
+          let totalFrames=this.gifPlayer.get_length();
+          if (totalFrames>1){
+            this.slider=document.createElement('input');
+            this.slider.type='range'; this.slider.min=0; 
+            this.slider.max=totalFrames-1; this.slider.value=0; 
+            this.slider.step=1;
+            this.slider.style.width='90%'; this.slider.style.margin='5px auto';
+            this.container.insertBefore(this.slider,this.captionContainer);
+            this.slider.addEventListener('input',()=>{
+              let f=parseInt(this.slider.value);
+              this.gifPlayer.move_to(f);
+              this.draw();
+            });
+          }
+          this.draw();
+        });
+      }
+      getAspectLabel(){
+        for (let k in aspectRatios){
+          if (Math.abs(aspectRatios[k].ratio - this.aspect)<0.01){
+            return aspectRatios[k].label;
+          }
+        }
+        return this.aspect.toFixed(2)+":1";
+      }
+      getMediaBoundingBox(){
+        if (this.gifPlayer){
+          let sc=this.gifPlayer.get_canvas();
+          if (!sc) return {imgW:0,imgH:0,left:this.canvas.width/2,top:this.canvas.height/2};
+          let scaleW=sc.width, scaleH=sc.height;
+          let left=(this.canvas.width-scaleW)/2, top=(this.canvas.height-scaleH)/2;
+          return {imgW:scaleW, imgH:scaleH, left, top};
+        } else if (this.video){
+          if (this.video.readyState<2) return {imgW:0,imgH:0,left:this.canvas.width/2,top:this.canvas.height/2};
+          let scale=Math.min(this.canvas.width/this.video.videoWidth,this.canvas.height/this.video.videoHeight);
+          let w=this.video.videoWidth*scale, h=this.video.videoHeight*scale;
+          let left=(this.canvas.width-w)/2, top=(this.canvas.height-h)/2;
+          return {imgW:w, imgH:h, left, top};
+        } else if (this.image){
+          let scale=Math.min(this.canvas.width/this.image.width,this.canvas.height/this.image.height);
+          let w=this.image.width*scale, h=this.image.height*scale;
+          let left=(this.canvas.width-w)/2, top=(this.canvas.height-h)/2;
+          return {imgW:w, imgH:h, left, top};
+        }
+        return {imgW:0,imgH:0,left:this.canvas.width/2,top:this.canvas.height/2};
+      }
+      clampCropArea(){
+        let {imgW, imgH, left, top} = this.getMediaBoundingBox();
+        let baseW=this.canvas.width*0.5;
+        let baseH=baseW/this.aspect;
+        let w=baseW*this.zoom, h=baseH*this.zoom;
+        let x=this.offsetX-w/2, y=this.offsetY-h/2;
+        if (x<left) this.offsetX+=(left-x);
+        if (x+w>(left+imgW)) this.offsetX-=((x+w)-(left+imgW));
+        if (y<top) this.offsetY+=(top-y);
+        if (y+h>(top+imgH)) this.offsetY-=((y+h)-(top+imgH));
+      }
+      fitCropToImage(){
+        let {imgW, imgH} = this.getMediaBoundingBox();
+        let baseW=this.canvas.width*0.5;
+        let baseH=baseW/this.aspect;
+        let zoomX=imgW/baseW, zoomY=imgH/baseH;
+        this.zoom=Math.min(zoomX,zoomY);
+        this.offsetX=this.canvas.width/2;
+        this.offsetY=this.canvas.height/2;
+        this.clampCropArea();
+        this.draw();
+      }
+      centerCrop(){
+        this.offsetX=this.canvas.width/2;
+        this.offsetY=this.canvas.height/2;
+        this.clampCropArea();
+        this.draw();
+      }
+      zoomIn(amount=0.1){
+        this.zoom=Math.max(0.1,this.zoom-amount);
+        this.clampCropArea();
+        this.draw();
+      }
+      zoomOut(amount=0.1){
+        this.zoom+=amount;
+        this.clampCropArea();
+        this.draw();
+      }
+      rotateClockwise(){
+        this.rotation=(this.rotation+10)%360;
+        this.clampCropArea();
+        this.draw();
+      }
+      rotateCounterClockwise(){
+        this.rotation=(this.rotation-10+360)%360;
+        this.clampCropArea();
+        this.draw();
+      }
+      moveCrop(dx,dy){
+        this.offsetX+=dx; this.offsetY+=dy;
+        this.clampCropArea();
+        this.draw();
+      }
+      adjustFrame(delta){
+        if (!this.slider) return;
+        if (this.gifPlayer){
+          let newVal=parseInt(this.slider.value)+delta;
+          newVal=Math.max(0,Math.min(newVal,this.slider.max));
+          this.slider.value=newVal;
+          this.gifPlayer.move_to(newVal);
+          this.draw();
+        } else if (this.video){
+          let newVal=parseFloat(this.slider.value)+delta*0.1;
+          newVal=Math.max(0,Math.min(newVal,this.slider.max));
+          this.slider.value=newVal;
+          this.video.currentTime=newVal;
+          this.draw();
+        }
+      }
+      setAspectRatio(key){
+        if (aspectRatios[key]){
+          this.aspect=aspectRatios[key].ratio;
+          this.exportWidth=aspectRatios[key].width;
+          this.exportHeight=aspectRatios[key].height;
+          this.aspectLabel.textContent=aspectRatios[key].label;
+          let {imgW, imgH} = this.getMediaBoundingBox();
+          let baseW=this.canvas.width*0.5;
+          let baseH=baseW/this.aspect;
+          let zoomX=imgW/baseW, zoomY=imgH/baseH;
+          this.zoom=Math.min(zoomX,zoomY);
+          this.offsetX=this.canvas.width/2;
+          this.offsetY=this.canvas.height/2;
+          this.clampCropArea();
+          this.draw();
+        }
+      }
+      getAspectLabel(){
+        for (let k in aspectRatios){
+          if (Math.abs(aspectRatios[k].ratio - this.aspect)<0.01){
+            return aspectRatios[k].label;
+          }
+        }
+        return this.aspect.toFixed(2)+":1";
+      }
+      draw(){
+        this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
+        if (this.gifPlayer){
+          let sc=this.gifPlayer.get_canvas();
+          if (sc){
+            this.ctx.save();
+            this.ctx.translate(this.canvas.width/2,this.canvas.height/2);
+            this.ctx.rotate(this.rotation*Math.PI/180);
+            let scale=Math.min(this.canvas.width/sc.width,this.canvas.height/sc.height);
+            let dw=sc.width*scale, dh=sc.height*scale;
+            this.ctx.drawImage(sc,-dw/2,-dh/2,dw,dh);
+            this.ctx.restore();
+          }
+        } else if (this.video){
+          if (this.video.readyState>=2){
+            this.ctx.save();
+            this.ctx.translate(this.canvas.width/2,this.canvas.height/2);
+            this.ctx.rotate(this.rotation*Math.PI/180);
+            let scale=Math.min(this.canvas.width/this.video.videoWidth,this.canvas.height/this.video.videoHeight);
+            let vw=this.video.videoWidth*scale, vh=this.video.videoHeight*scale;
+            this.ctx.drawImage(this.video,-vw/2,-vh/2,vw,vh);
+            this.ctx.restore();
+          }
+        } else if (this.image){
+          this.ctx.save();
+          this.ctx.translate(this.canvas.width/2,this.canvas.height/2);
+          this.ctx.rotate(this.rotation*Math.PI/180);
+          let scale=Math.min(this.canvas.width/this.image.width,this.canvas.height/this.image.height);
+          let iw=this.image.width*scale, ih=this.image.height*scale;
+          this.ctx.drawImage(this.image,-iw/2,-ih/2,iw,ih);
+          this.ctx.restore();
+        }
+        // crop overlay
+        let baseW=this.canvas.width*0.5;
+        let baseH=baseW/this.aspect;
+        let w=baseW*this.zoom, h=baseH*this.zoom;
+        let x=this.offsetX-w/2, y=this.offsetY-h/2;
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(0,0,this.canvas.width,this.canvas.height);
+        this.ctx.rect(x,y,w,h);
+        this.ctx.fillStyle="rgba(0,0,0,0.5)";
+        this.ctx.fill("evenodd");
+        this.ctx.restore();
+        this.ctx.strokeStyle="yellow";
+        this.ctx.lineWidth=2;
+        this.ctx.strokeRect(x,y,w,h);
+      }
+      getCroppedImageDataURL(mimeType="image/png"){
+        let offCanvas=document.createElement('canvas');
+        offCanvas.width=this.exportWidth; offCanvas.height=this.exportHeight;
+        let offCtx=offCanvas.getContext('2d');
+        let baseW=this.canvas.width*0.5;
+        let baseH=baseW/this.aspect;
+        let w=baseW*this.zoom, h=baseH*this.zoom;
+        let x=this.offsetX-w/2, y=this.offsetY-h/2;
+        if (this.gifPlayer){
+          let sc=this.gifPlayer.get_canvas();
+          if (sc){
+            offCtx.save();
+            offCtx.translate(offCanvas.width/2,offCanvas.height/2);
+            offCtx.rotate(this.rotation*Math.PI/180);
+            offCtx.drawImage(sc,0,0,sc.width,sc.height,
+              -this.exportWidth/2,-this.exportHeight/2,
+              this.exportWidth,this.exportHeight
+            );
+            offCtx.restore();
+          }
+        } else if (this.video){
+          let scale=Math.min(this.canvas.width/this.video.videoWidth,this.canvas.height/this.video.videoHeight);
+          let dx=(this.canvas.width-this.video.videoWidth*scale)/2;
+          let dy=(this.canvas.height-this.video.videoHeight*scale)/2;
+          let sx=(x-dx)/scale, sy=(y-dy)/scale;
+          let sW=w/scale, sH=h/scale;
+          offCtx.save();
+          offCtx.translate(offCanvas.width/2,offCanvas.height/2);
+          offCtx.rotate(this.rotation*Math.PI/180);
+          offCtx.drawImage(this.video,sx,sy,sW,sH,
+            -this.exportWidth/2,-this.exportHeight/2,
+            this.exportWidth,this.exportHeight
+          );
+          offCtx.restore();
+        } else if (this.image){
+          let scale=Math.min(this.canvas.width/this.image.width,this.canvas.height/this.image.height);
+          let dx=(this.canvas.width-this.image.width*scale)/2;
+          let dy=(this.canvas.height-this.image.height*scale)/2;
+          let sx=(x-dx)/scale, sy=(y-dy)/scale;
+          let sW=w/scale, sH=h/scale;
+          offCtx.save();
+          offCtx.translate(offCanvas.width/2,offCanvas.height/2);
+          offCtx.rotate(this.rotation*Math.PI/180);
+          offCtx.drawImage(this.image,sx,sy,sW,sH,
+            -this.exportWidth/2,-this.exportHeight/2,
+            this.exportWidth,this.exportHeight
+          );
+          offCtx.restore();
+        }
+        return offCanvas.toDataURL(mimeType);
+      }
+    }
+
+    function processFiles(files){
+      let defaultCropSize=document.getElementById('default-crop').value||"1024x1024";
+      for (let file of files){
+        if (file.type==="text/plain"||file.name.toLowerCase().endsWith('.txt')){
+          let baseName=file.name.replace(/\.[^/.]+$/,"");
+          let reader=new FileReader();
+          reader.onload=(e)=>{
+            captionCache[baseName]=e.target.result;
+            imageEditors.forEach(ed=>{
+              if (ed.baseName===baseName) ed.captionInput.value=e.target.result;
+            });
+          };
+          reader.readAsText(file);
+        } else if (file.type.startsWith('image/')||file.type.startsWith('video/')||file.name.toLowerCase().endsWith('.gif')){
+          let ed=new ImageEditor(file,defaultCropSize);
+          imageEditors.push(ed);
+          document.getElementById('image-container').appendChild(ed.container);
+        }
+      }
+      updateAllThumbnails();
+    }
+
+    // images-per-row slider
+    let imagesPerRowSlider=document.getElementById('images-per-row');
+    imagesPerRowSlider.addEventListener('input',(e)=>{
+      imagesPerRow=parseInt(e.target.value);
+      document.getElementById('images-per-row-label').textContent=imagesPerRow;
+      updateAllThumbnails();
+    });
+
+    // color scheme
+    document.querySelectorAll('input[name="color-scheme"]').forEach(radio=>{
+      radio.addEventListener('change',(e)=>{
+        if (e.target.value==="dark") document.body.classList.add('dark-mode');
+        else document.body.classList.remove('dark-mode');
+      });
+    });
+
+    // file input
+    document.getElementById('file-input').addEventListener('change',(e)=>{
+      processFiles(e.target.files);
+    });
+
+    // drag & drop
+    const dropZone=document.getElementById('drop-zone');
+    dropZone.addEventListener('dragover',(e)=>{
+      e.preventDefault();
+      dropZone.style.backgroundColor="#e7f3ff";
+    });
+    dropZone.addEventListener('dragleave',(e)=>{
+      e.preventDefault();
+      dropZone.style.backgroundColor="";
+    });
+    dropZone.addEventListener('drop',(e)=>{
+      e.preventDefault();
+      dropZone.style.backgroundColor="";
+      processFiles(e.dataTransfer.files);
+    });
+
+    // backup
+    async function backupZip(zipBlob){
+      if (!window.showDirectoryPicker){
+        console.log("File System Access API not supported – backup not saved.");
+        return;
+      }
+      try {
+        const backupDir=await window.showDirectoryPicker({mode:"readwrite"});
+        let now=new Date();
+        let filename=now.getFullYear()+"-"+
+          String(now.getMonth()+1).padStart(2,'0')+"-"+
+          String(now.getDate()).padStart(2,'0')+"-"+
+          String(now.getHours()).padStart(2,'0')+"-"+
+          String(now.getMinutes()).padStart(2,'0')+"-"+
+          String(now.getSeconds()).padStart(2,'0')+".zip";
+        const fileHandle=await backupDir.getFileHandle(filename,{create:true});
+        const writable=await fileHandle.createWritable();
+        await writable.write(zipBlob);
+        await writable.close();
+        console.log("Backup saved as",filename);
+      } catch(err){
+        console.error("Backup failed:",err);
+      }
+    }
+
+    // selection etc
+    function selectOnly(index){
+      selectedIndices.clear();
+      selectedIndices.add(index);
+      currentSelectionIndex=index;
+      updateSelectionStyles();
+    }
+    function toggleSelectAll(){
+      if (selectedIndices.size===imageEditors.length) selectedIndices.clear();
+      else {
+        imageEditors.forEach((_,i)=>selectedIndices.add(i));
+        currentSelectionIndex=0;
+      }
+      updateSelectionStyles();
+    }
+    function removeImageEditor(index){
+      if (index<0||index>=imageEditors.length) return;
+      let ed=imageEditors[index];
+      ed.container.remove();
+      if (ed.video) ed.video.remove();
+      imageEditors.splice(index,1);
+      selectedIndices=new Set([...selectedIndices].filter(i=>i!==index).map(i=>i>index?i-1:i));
+      if (currentSelectionIndex>=imageEditors.length){
+        currentSelectionIndex=imageEditors.length-1;
+      }
+      updateSelectionStyles();
+    }
+    function selectNext(){
+      if (!imageEditors.length) return;
+      currentSelectionIndex=(currentSelectionIndex+1)%imageEditors.length;
+      selectedIndices.clear();
+      selectedIndices.add(currentSelectionIndex);
+      updateSelectionStyles();
+    }
+    function selectPrevious(){
+      if (!imageEditors.length) return;
+      currentSelectionIndex=(currentSelectionIndex+imageEditors.length-1)%imageEditors.length;
+      selectedIndices.clear();
+      selectedIndices.add(currentSelectionIndex);
+      updateSelectionStyles();
+    }
+    function updateSelectionStyles(){
+      imageEditors.forEach((ed,i)=>{
+        if (selectedIndices.has(i)) ed.container.classList.add('selected');
+        else ed.container.classList.remove('selected');
+      });
+    }
+
+    // keyboard shortcuts
+    document.addEventListener('keydown',(e)=>{
+      if (document.activeElement.tagName==='TEXTAREA' || document.activeElement.tagName==='INPUT') return;
+      if (e.key==='a'||e.key==='A'){
+        if (e.shiftKey) toggleSelectAll();
+        else selectedIndices.forEach(i=>{
+          if (imageEditors[i].slider) imageEditors[i].adjustFrame(-1);
+        });
+      } else if (e.key==='s'||e.key==='S'){
+        selectedIndices.forEach(i=>{
+          if (imageEditors[i].slider) imageEditors[i].adjustFrame(1);
+        });
+      } else if (e.key==='p'||e.key==='P'){
+        selectPrevious();
+      } else if (e.key==='n'||e.key==='N'){
+        selectNext();
+      } else if (e.key==='i'||e.key==='I'||e.key==='+'){
+        selectedIndices.forEach(i=>imageEditors[i].zoomIn());
+      } else if (e.key==='o'||e.key==='O'||e.key==='-'){
+        selectedIndices.forEach(i=>imageEditors[i].zoomOut());
+      } else if (e.key==='c'||e.key==='C'){
+        selectedIndices.forEach(i=>imageEditors[i].rotateClockwise());
+      } else if (e.key==='x'||e.key==='X'){
+        selectedIndices.forEach(i=>imageEditors[i].rotateCounterClockwise());
+      } else if (e.key==='ArrowUp'){
+        selectedIndices.forEach(i=>imageEditors[i].moveCrop(0,-5));
+      } else if (e.key==='ArrowDown'){
+        selectedIndices.forEach(i=>imageEditors[i].moveCrop(0,5));
+      } else if (e.key==='ArrowLeft'){
+        selectedIndices.forEach(i=>imageEditors[i].moveCrop(-5,0));
+      } else if (e.key==='ArrowRight'){
+        selectedIndices.forEach(i=>imageEditors[i].moveCrop(5,0));
+      } else if (e.key>='1' && e.key<='9'){
+        selectedIndices.forEach(i=>{
+          imageEditors[i].setAspectRatio(e.key);
+        });
+      } else if (e.key==='h'||e.key==='H'){
+        selectedIndices.forEach(i=>imageEditors[i].centerCrop());
+      } else if (e.key==='f'||e.key==='F'){
+        selectedIndices.forEach(i=>imageEditors[i].fitCropToImage());
+      } else if (e.key==='?'||e.key==='/'){
+        showHelpModal();
+      }
+    });
+
+    // mouse wheel => zoom
+    document.addEventListener('wheel',(e)=>{
+      if (e.target.tagName==='CANVAS'){
+        let ed=imageEditors.find(ed=>ed.canvas===e.target);
+        if (ed){
+          if (e.deltaY<0) ed.zoomIn();
+          else ed.zoomOut();
+          e.preventDefault();
+        }
+      }
+    }, {passive:false});
+
+    // Download & Backup
+    document.getElementById('download-all').addEventListener('click',()=>{
+      if (!imageEditors.length) return;
+      let downloadAsZip=document.getElementById('download-zip').checked;
+      let outputFormat=document.querySelector('input[name="output-format"]:checked').value;
+      let mimeType=(outputFormat==='jpg')?"image/jpeg":"image/png";
+
+      let zip=new JSZip();
+      imageEditors.forEach(ed=>{
+        let dataURL=ed.getCroppedImageDataURL(mimeType);
+        let base64=dataURL.split(',')[1];
+        let name=ed.baseName;
+        zip.file(name+((outputFormat==='jpg')?".jpg":".png"), base64, {base64:true});
+        let captionText=ed.captionInput.value.trim();
+        if (captionText) zip.file(name+".txt", captionText);
+      });
+      zip.generateAsync({type:"blob"}).then(async(zipBlob)=>{
+        await backupZip(zipBlob);
+        if (downloadAsZip){
+          let a=document.createElement('a');
+          a.href=URL.createObjectURL(zipBlob);
+          a.download="cropped_media.zip";
+          a.click();
+        } else {
+          imageEditors.forEach(ed=>{
+            let name=ed.baseName;
+            let dataURL=ed.getCroppedImageDataURL(mimeType);
+            let a=document.createElement('a');
+            a.href=dataURL;
+            a.download=name+((outputFormat==='jpg')?".jpg":".png");
+            setTimeout(()=>a.click(),0);
+            let captionText=ed.captionInput.value.trim();
+            if (captionText){
+              let blob=new Blob([captionText], {type:"text/plain"});
+              let captionA=document.createElement('a');
+              captionA.href=URL.createObjectURL(blob);
+              captionA.download=name+".txt";
+              setTimeout(()=>captionA.click(),200);
+            }
+          });
+        }
+      });
+    });
+
+    // The help modal
+    let helpModal=document.getElementById('help-modal');
+    let helpClose=document.getElementById('help-close');
+    let helpBtn=document.getElementById('help-btn');
+    function showHelpModal(){
+      helpModal.style.display="flex";
+    }
+    function hideHelpModal(){
+      helpModal.style.display="none";
+    }
+    helpBtn.addEventListener('click', showHelpModal);
+    helpClose.addEventListener('click', hideHelpModal);
+    helpModal.addEventListener('click',(e)=>{
+      if(e.target===helpModal) hideHelpModal();
+    });
+  </script>
+</body>
+</html>
